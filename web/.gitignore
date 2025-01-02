@@ -28,3 +28,8 @@ log/
 **/*/typings/auto-generated
 
 modern.config.local.*
+
+## Panda
+styled-system
+styled-system-studio
+~
