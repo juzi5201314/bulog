@@ -543,11 +543,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cfg-if",
+ "compact_str",
  "dotenv",
+ "fastrand",
  "hashbrown 0.15.2",
  "salvo",
  "serde",
  "serde_json",
+ "smol_str 0.3.2",
  "surrealdb",
  "tokio",
  "tracing",
@@ -647,7 +650,7 @@ dependencies = [
  "ref-cast",
  "serde",
  "serde_json",
- "smol_str",
+ "smol_str 0.2.2",
  "thiserror 1.0.69",
 ]
 
@@ -669,7 +672,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "smol_str",
+ "smol_str 0.2.2",
  "stacker",
  "thiserror 1.0.69",
 ]
@@ -685,7 +688,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "smol_str",
+ "smol_str 0.2.2",
  "stacker",
  "thiserror 1.0.69",
  "unicode-security",
@@ -773,6 +776,22 @@ dependencies = [
  "glob",
  "libc",
  "libloading",
+]
+
+[[package]]
+name = "compact_str"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b79c4069c6cad78e2e0cdfcbd26275770669fb39fd308a752dc110e83b9af32"
+dependencies = [
+ "castaway",
+ "cfg-if",
+ "itoa",
+ "rustversion",
+ "ryu",
+ "serde",
+ "smallvec",
+ "static_assertions",
 ]
 
 [[package]]
@@ -3892,6 +3911,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "smol_str"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9676b89cd56310a87b93dec47b11af744f34d5fc9f367b829474eec0a891350d"
+dependencies = [
+ "borsh",
+ "serde",
+]
+
+[[package]]
 name = "snafu"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3965,6 +3994,12 @@ dependencies = [
  "psm",
  "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "static_assertions_next"

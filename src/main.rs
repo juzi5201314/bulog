@@ -7,6 +7,8 @@ use web::web_server;
 mod db;
 mod web;
 
+mod nano_id;
+
 fn main() {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt().init();
