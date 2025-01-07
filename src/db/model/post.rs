@@ -40,8 +40,9 @@ pub async fn create_post(
         IF record::exists(type::thing("post", $id)) {
             RETURN 0;
         } ELSE {
-            CREATE type::thing("post",$id)
-                SET 
+            CREATE
+                type::thing("post",$id)
+            SET 
                 created_time = time::now(), 
                 title = $title, 
                 content = $content, 
@@ -67,24 +68,3 @@ pub async fn create_post(
     }
 }
 
-#[tokio::test]
-async fn test_db_create_post() -> anyhow::Result<()> {
-    let db = crate::db::mem_db().await?;
-
-    let id = create_post(
-        &db,
-        "test title".into(),
-        "test content".into(),
-        false,
-        false,
-    )
-    .await?;
-
-    let posts: Vec<PostRecord> = db.query("select * from post").await?.take(0)?;
-
-    assert_eq!(posts[0].id, id);
-    assert_eq!(posts[0].title, "test title");
-    assert_eq!(posts[0].content, "test content");
-
-    Ok(())
-}

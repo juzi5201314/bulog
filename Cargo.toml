@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.95"
+bulog_derive = { version = "0.1.0", path = "bulog_derive" }
 cfg-if = "1.0.0"
 compact_str = { version = "0.8.1", features = ["serde", "smallvec"] }
 dotenv = "0.15.0"

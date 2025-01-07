@@ -1,0 +1,12 @@
+[package]
+name = "bulog_derive"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+syn = "2.0.95"
+quote = "1.0.38"
+proc-macro2 = "1.0.92"
+
+[lib]
+proc-macro = true

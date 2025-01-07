@@ -19,6 +19,7 @@ fn select_endpoint() -> String {
     std::env::var("BU_ENDPOINT").ok().unwrap_or_else(_default)
 }
 
+#[allow(unused)]
 pub(crate) async fn mem_db() -> anyhow::Result<Surreal<Any>> {
     db(Some("mem://".to_owned())).await
 }
