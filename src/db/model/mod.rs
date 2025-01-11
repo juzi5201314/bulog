@@ -14,7 +14,7 @@ mod tests {
     use smol_str::format_smolstr;
 
     use crate::db::model::{
-        config::{ConfigRecordOption, query_config, update_config},
+        config::{ConfigRecordOption, query_config, update_config, verify_password},
         post::{
             PostRecord, PostRecordOption, create_post, query_post, query_posts_by_page, update_post,
         },
@@ -37,6 +37,26 @@ mod tests {
         assert_eq!(conf.title, "bulog");
         assert_eq!(conf.description, "updated");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_password() -> anyhow::Result<()> {
+        let db = crate::db::mem_db().await?;
+        let conf = query_config(&db).await?;
+        assert!(conf.password.is_empty());
+        assert!(verify_password(&db, "default".to_owned()).await?);
+        update_config(&db, ConfigRecordOption {
+            title: Some("new title".to_owned()),
+            password: Some("pwd1".to_owned()),
+            ..Default::default()
+        })
+        .await?;
+        let conf = query_config(&db).await?;
+        assert_eq!(conf.title, "new title");
+        assert!(conf.password.is_empty());
+        assert!(verify_password(&db, "pwd1".to_owned()).await?);
+        assert!(!verify_password(&db, "pwd2".to_owned()).await?);
         Ok(())
     }
 
