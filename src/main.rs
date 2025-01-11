@@ -11,7 +11,9 @@ mod nano_id;
 
 fn main() {
     dotenv::dotenv().ok();
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(std::env::var("BU_LOG").unwrap_or_else(|_| "warn,bulog=info".to_owned()))
+        .init();
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -20,7 +22,14 @@ fn main() {
 }
 
 async fn async_main() {
-    tokio::spawn(web_server(|h| Box::pin(listen_shutdown_signal(h))));
+    let (server_handle, join_handle) = web_server().await.unwrap();
+
+    listen_shutdown_signal(server_handle).await;
+    if let Err(_) = tokio::time::timeout(Duration::from_millis(3500), join_handle).await {
+        tracing::warn!("shutdown server timeout, force termination");
+    } else {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 async fn listen_shutdown_signal(server_handle: ServerHandle) {
@@ -47,10 +56,12 @@ async fn listen_shutdown_signal(server_handle: ServerHandle) {
     };
 
     tokio::select! {
-        _ = ctrl_c => println!("ctrl_c signal received"),
-        _ = terminate => println!("terminate signal received"),
+        _ = ctrl_c => tracing::info!("ctrl_c signal received"),
+        _ = terminate => tracing::info!("terminate signal received"),
     };
 
+    tracing::info!("shutting down the server...");
+
     // Graceful Shutdown Server
-    server_handle.stop_graceful(Some(Duration::from_secs(5)));
+    server_handle.stop_graceful(Some(Duration::from_secs(3)));
 }

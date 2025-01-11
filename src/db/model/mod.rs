@@ -14,7 +14,9 @@ mod tests {
     use smol_str::format_smolstr;
 
     use crate::db::model::{
-        config::{ConfigRecordOption, query_config, update_config, verify_password},
+        config::{
+            ConfigRecordOption, is_new_install, query_config, update_config, verify_password,
+        },
         post::{
             PostRecord, PostRecordOption, create_post, query_post, query_posts_by_page, update_post,
         },
@@ -22,7 +24,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_db_config() -> anyhow::Result<()> {
-        let db = crate::db::mem_db().await?;
+        let db = crate::db::test_db().await?;
+        assert!(!is_new_install(&db).await?);
 
         let conf = query_config(&db).await?;
         assert_eq!(conf.title, "bulog");
@@ -42,10 +45,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_password() -> anyhow::Result<()> {
-        let db = crate::db::mem_db().await?;
+        let db = crate::db::test_db().await?;
         let conf = query_config(&db).await?;
         assert!(conf.password.is_empty());
-        assert!(verify_password(&db, "default".to_owned()).await?);
         update_config(&db, ConfigRecordOption {
             title: Some("new title".to_owned()),
             password: Some("pwd1".to_owned()),
@@ -62,7 +64,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_post() -> anyhow::Result<()> {
-        let db = crate::db::mem_db().await?;
+        let db = crate::db::test_db().await?;
 
         let id = create_post(
             &db,
@@ -84,7 +86,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_post() -> anyhow::Result<()> {
-        let db = crate::db::mem_db().await?;
+        let db = crate::db::test_db().await?;
         let id = create_post(
             &db,
             "test title".into(),
@@ -105,7 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_post() -> anyhow::Result<()> {
-        let db = crate::db::mem_db().await?;
+        let db = crate::db::test_db().await?;
         for i in 0..101 {
             create_post(&db, format_smolstr!("post {i}"), "".into(), false, false).await?;
         }

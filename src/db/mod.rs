@@ -1,8 +1,11 @@
 use cfg_if::cfg_if;
-use model::{Record, config::ConfigRecord};
+use model::{
+    Record,
+    config::{ConfigRecord, create_config},
+};
 use surrealdb::{Surreal, engine::any::Any};
 
-mod model;
+pub mod model;
 
 fn select_endpoint() -> String {
     let _default = || {
@@ -19,13 +22,25 @@ fn select_endpoint() -> String {
     std::env::var("BU_ENDPOINT").ok().unwrap_or_else(_default)
 }
 
+/// test only
 #[allow(unused)]
-pub(crate) async fn mem_db() -> anyhow::Result<Surreal<Any>> {
-    db(Some("mem://".to_owned())).await
+#[doc(hidden)]
+pub(crate) async fn test_db() -> anyhow::Result<Surreal<Any>> {
+    let db = db(Some("mem://".to_owned())).await?;
+    create_config(&db, ConfigRecord::default()).await?;
+    Ok(db)
 }
 
 pub async fn db(specified: Option<String>) -> anyhow::Result<Surreal<Any>> {
-    let db = surrealdb::engine::any::connect(specified.unwrap_or_else(select_endpoint)).await?;
+    let endpoint = specified.unwrap_or_else(select_endpoint);
+
+    if endpoint.starts_with("mem:") {
+        tracing::warn!(
+            "You are using an in-memory database, and will lose all data if you stop it!"
+        );
+    }
+
+    let db = surrealdb::engine::any::connect(endpoint).await?;
     initialize_db(&db).await?;
     Ok(db)
 }
@@ -33,7 +48,7 @@ pub async fn db(specified: Option<String>) -> anyhow::Result<Surreal<Any>> {
 async fn initialize_db(db: &Surreal<Any>) -> anyhow::Result<()> {
     tracing::info!("Initializing database");
     db.use_ns("bulog").use_db("blog").await?;
-    let blog_config: Option<ConfigRecord> = db.select(("config", "bulog")).await?;
+    /* let blog_config: Option<ConfigRecord> = db.select(("config", "bulog")).await?;
     // 如果config表是空的, 那么认定博客程序未初始化
     // 在config表中插入一条`唯一`的记录, 用于存放博客全局配置
     // 记录id硬编码为: bulog
@@ -43,6 +58,6 @@ async fn initialize_db(db: &Surreal<Any>) -> anyhow::Result<()> {
             .create(("config", "bulog"))
             .content(ConfigRecord::default())
             .await?;
-    }
+    } */
     Ok(())
 }

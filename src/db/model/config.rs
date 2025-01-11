@@ -3,6 +3,8 @@ use std::convert::identity;
 use serde::{Deserialize, Serialize};
 use surrealdb::{Surreal, engine::any::Any};
 
+use super::Record;
+
 #[derive(Debug, Serialize, Deserialize, bulog_derive::Optional)]
 pub struct ConfigRecord {
     pub title: String,
@@ -20,6 +22,13 @@ impl Default for ConfigRecord {
             password: "".to_owned(),
         }
     }
+}
+
+pub async fn create_config(db: &Surreal<Any>, mut config: ConfigRecord) -> anyhow::Result<()> {
+    let pwd = std::mem::take(&mut config.password);
+    let _: Option<Record> = db.create(("config", "bulog")).content(config).await?;
+    update_password(db, pwd).await?;
+    Ok(())
 }
 
 pub async fn query_config(db: &Surreal<Any>) -> anyhow::Result<ConfigRecord> {
@@ -46,7 +55,8 @@ pub async fn update_config(
 }
 
 pub async fn update_password(db: &Surreal<Any>, pwd: String) -> anyhow::Result<()> {
-    db.query("UPDATE config:bulog SET password = crypto::argon2::generate($pwd)")
+    db.query("UPDATE config:bulog SET password = crypto::argon2::generate($pwd); \
+    IF !crypto::argon2::compare((SELECT password FROM ONLY config:bulog).password, $pwd) { THROW \"internal error: passwords not equal\"; };")
         .bind(("pwd", pwd))
         .await
         .map_err(Into::into)
@@ -54,10 +64,19 @@ pub async fn update_password(db: &Surreal<Any>, pwd: String) -> anyhow::Result<(
 }
 
 pub async fn verify_password(db: &Surreal<Any>, pwd: String) -> anyhow::Result<bool> {
-    db.query("RETURN crypto::argon2::compare((SELECT password FROM ONLY config:bulog).password, $pwd)")
-        .bind(("pwd", pwd))
+    db.query(
+        "RETURN crypto::argon2::compare((SELECT password FROM ONLY config:bulog).password, $pwd)",
+    )
+    .bind(("pwd", pwd))
+    .await
+    .and_then(|mut res| res.take::<Option<_>>(0))
+    .map(|opt| opt.unwrap_or_default())
+    .map_err(Into::into)
+}
+
+pub async fn is_new_install(db: &Surreal<Any>) -> anyhow::Result<bool> {
+    db.select(("config", "bulog"))
         .await
-        .and_then(|mut res| res.take::<Option<_>>(0))
-        .map(|opt| opt.unwrap_or_default())
         .map_err(Into::into)
+        .map(|opt: Option<ConfigRecord>| opt.is_none())
 }
