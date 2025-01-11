@@ -1,5 +1,3 @@
-use std::convert::identity;
-
 use serde::{Deserialize, Deserializer, Serialize};
 use smol_str::{SmolStr, ToSmolStr};
 use surrealdb::{RecordId, Surreal, engine::any::Any};

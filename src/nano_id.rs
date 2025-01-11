@@ -1,4 +1,3 @@
-use compact_str::CompactString;
 use smol_str::{SmolStr, SmolStrBuilder};
 
 const ALPHABET: [char; 62] = [
