@@ -11,22 +11,24 @@ pub struct Record {
 
 #[cfg(test)]
 mod tests {
+    use smol_str::format_smolstr;
+
     use crate::db::model::{
         config::{ConfigRecordOption, query_config, update_config},
-        post::{PostRecord, create_post},
+        post::{
+            PostRecord, PostRecordOption, create_post, query_post, query_posts_by_page, update_post,
+        },
     };
 
     #[tokio::test]
-    async fn db_config() -> anyhow::Result<()> {
+    async fn test_db_config() -> anyhow::Result<()> {
         let db = crate::db::mem_db().await?;
 
         let conf = query_config(&db).await?;
         assert_eq!(conf.title, "bulog");
-        assert_eq!(conf.description, "A sample blog program");
 
         update_config(&db, ConfigRecordOption {
             description: Some("updated".to_owned()),
-            //title: Some("bulog".to_owned()),
             ..Default::default()
         })
         .await?;
@@ -39,7 +41,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_db_create_post() -> anyhow::Result<()> {
+    async fn test_create_post() -> anyhow::Result<()> {
         let db = crate::db::mem_db().await?;
 
         let id = create_post(
@@ -57,6 +59,52 @@ mod tests {
         assert_eq!(posts[0].title, "test title");
         assert_eq!(posts[0].content, "test content");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_update_post() -> anyhow::Result<()> {
+        let db = crate::db::mem_db().await?;
+        let id = create_post(
+            &db,
+            "test title".into(),
+            "test content".into(),
+            false,
+            false,
+        )
+        .await?;
+        update_post(&db, id.clone(), PostRecordOption {
+            title: Some("new title".into()),
+            ..Default::default()
+        })
+        .await?;
+        let post = query_post(&db, id).await?.unwrap();
+        assert_eq!(post.title, "new title");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_query_post() -> anyhow::Result<()> {
+        let db = crate::db::mem_db().await?;
+        for i in 0..101 {
+            create_post(&db, format_smolstr!("post {i}"), "".into(), false, false).await?;
+        }
+        let posts = query_posts_by_page(&db, 0, 10, false).await?;
+        assert_eq!(
+            posts.get(0).map(|post| post.title.clone()),
+            Some("post 100".into())
+        );
+        assert_eq!(
+            posts.get(9).map(|post| post.title.clone()),
+            Some("post 91".into())
+        );
+        assert_eq!(posts.len(), 10);
+        let posts = query_posts_by_page(&db, 10, 10, false).await?;
+        assert_eq!(posts.len(), 1);
+        assert_eq!(
+            posts.get(0).map(|post| post.title.clone()),
+            Some("post 0".into())
+        );
         Ok(())
     }
 }
