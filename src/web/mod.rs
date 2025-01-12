@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use resp::Response;
 use salvo::{
-    Depot, FlowCtrl, Listener, Request, Router, Server, affix_state,
+    Depot, FlowCtrl, Listener, Request, Router, Server, Service, affix_state,
+    catcher::Catcher,
     conn::TcpListener,
     handler,
     server::ServerHandle,
@@ -22,8 +23,7 @@ struct Installed;
 pub async fn web_server() -> anyhow::Result<(ServerHandle, JoinHandle<()>)> {
     let bind = std::env::var("BU_BIND").unwrap_or_else(|_| "0.0.0.0:8686".to_owned());
     let db = db::db(None).await?;
-    let session_handler = session_secret(&db).await?;
-    let router = Router::new().hoop(session_handler).push(router(db));
+    let router = router(db).await?;
 
     tracing::info!("listen on {}", bind);
 
@@ -31,15 +31,21 @@ pub async fn web_server() -> anyhow::Result<(ServerHandle, JoinHandle<()>)> {
     let server = Server::new(listener);
 
     let server_handle = server.handle();
-    let join_handle = tokio::spawn(server.serve(router));
+    let join_handle = tokio::spawn(server.serve(Service::new(router).catcher(catcher())));
     Ok((server_handle, join_handle))
 }
 
-pub(crate) fn router(db: Surreal<Any>) -> Router {
-    Router::new()
+pub(crate) async fn router(db: Surreal<Any>) -> anyhow::Result<Router> {
+    let session_handler = session_secret(&db).await?;
+    Ok(Router::new()
+        .hoop(session_handler)
         .hoop(affix_state::inject(db))
         .hoop(initialization_check)
-        .push(v1::router())
+        .push(v1::router()))
+}
+
+pub(crate) fn catcher() -> Catcher {
+    Catcher::default().hoop(v1::catch404)
 }
 
 #[handler]
@@ -66,17 +72,17 @@ async fn initialization_check(
 async fn session_secret(db: &Surreal<Any>) -> anyhow::Result<SessionHandler<CookieStore>> {
     let secret = db
         .query(
-            "LET $secret = (SELECT session FROM secret:bulog); \
-        IF $secret != null { \
-            RETURN $secret; \
-        } ELSE { \
-            LET $secret = rand::string(32); \
-            CREATE secret:bulog SET session = $secret; \
-            RETURN $secret; \
-        }",
+            "LET $secret = (SELECT session FROM ONLY secret:bulog).session; \
+            IF $secret != NONE { \
+                RETURN $secret; \
+            } ELSE { \
+                LET $secret = rand::string(64); \
+                CREATE secret:bulog SET session = $secret; \
+                RETURN $secret; \
+            }",
         )
         .await?
-        .take::<Option<String>>(0)?
+        .take::<Option<String>>(1)?
         .unwrap();
     SessionHandler::builder(CookieStore::new(), secret.as_bytes())
         .cookie_name("bulog")
@@ -89,54 +95,71 @@ async fn session_secret(db: &Surreal<Any>) -> anyhow::Result<SessionHandler<Cook
 mod tests {
     use salvo::{
         Service,
-        http::{header::CONTENT_TYPE, mime},
+        http::{
+            cookie::CookieJar,
+            header::{CONTENT_TYPE, COOKIE},
+            mime,
+        },
         test::{ResponseExt, TestClient},
     };
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
 
     use crate::db::{db, test_db};
 
-    macro_rules! get {
-        ($target:literal @$service:expr) => {
-            TestClient::get(concat!("http://localhost:0/", $target))
-                .send(&$service)
-                .await
-                .take_json::<Response>()
-                .await
-                .unwrap()
-        };
-        ($target:literal @$service:expr => text) => {
-            TestClient::get(concat!("http://localhost:0/", $target))
-                .send(&$service)
-                .await
-                .take_string()
-                .await
-                .unwrap()
-        };
+    use super::catcher;
+
+    struct HttpClient {
+        service: Service,
+        cookie: CookieJar,
     }
 
-    macro_rules! post {
-        ($target:literal @$service:expr, $body:expr) => {
-            TestClient::post(concat!("http://localhost:0/", $target))
+    impl HttpClient {
+        pub async fn get(&self, uri: &str) -> Response {
+            TestClient::get(format!("http://localhost:0/{}", uri))
+                .add_header(
+                    COOKIE,
+                    &self
+                        .cookie
+                        .iter()
+                        .map(|c| c.encoded().to_string())
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    true,
+                )
+                .send(&self.service)
+                .await
+                .take_json()
+                .await
+                .unwrap()
+        }
+
+        pub async fn post<T>(&mut self, uri: &str, data: &T) -> Response
+        where
+            T: Serialize,
+        {
+            let mut resp = TestClient::post(format!("http://localhost:0/{}", uri))
                 .add_header(CONTENT_TYPE, mime::APPLICATION_JSON.essence_str(), true)
-                .json($body)
-                .send(&$service)
-                .await
-                .take_json::<Response>()
-                .await
-                .unwrap()
-        };
-        ($target:literal @$service:expr, $body:expr => text) => {
-            TestClient::post(concat!("http://localhost:0/", $target))
-                .add_header(CONTENT_TYPE, mime::JSON.as_str(), true)
-                .json($body)
-                .send(&$service)
-                .await
-                .take_string()
-                .await
-                .unwrap()
-        };
+                .json(data)
+                .send(&self.service)
+                .await;
+            for cookie in resp.cookies().iter() {
+                self.cookie.add(cookie.clone());
+                println!("{:?}", cookie);
+            }
+            resp.take_json().await.unwrap()
+        }
+
+        pub fn new(service: Service) -> Self {
+            Self {
+                service,
+                cookie: CookieJar::default(),
+            }
+        }
+
+        pub async fn default() -> Self {
+            Self::new(service().await)
+        }
     }
 
     #[derive(Deserialize)]
@@ -147,28 +170,58 @@ mod tests {
     }
 
     async fn service() -> Service {
-        Service::new(super::router(test_db().await.unwrap()))
+        Service::new(super::router(test_db().await.unwrap()).await.unwrap()).catcher(catcher())
     }
 
     #[tokio::test]
     async fn test_install() {
-        let service = Service::new(super::router(db(Some("mem://".to_owned())).await.unwrap()));
-        let notinstalled = get!("/v1/config"@service);
+        let service = Service::new(
+            super::router(db(Some("mem://".to_owned())).await.unwrap())
+                .await
+                .unwrap(),
+        );
+        let mut client = HttpClient::new(service);
+        let notinstalled = client.get("/v1/config").await;
         assert_eq!(notinstalled.code, 0);
         assert_eq!(notinstalled.message, "uninitialized");
 
-        let install = post!("/v1/install"@service, &json!({
-            "title": "new blog",
-            "description": "an apple",
-            "password": "$test$"
-        }));
+        let install = client
+            .post(
+                "/v1/install",
+                &json!({
+                    "title": "new blog",
+                    "description": "an apple",
+                    "password": "$test$"
+                }),
+            )
+            .await;
         assert_eq!(install.code, 200);
 
-        let installed = get!("/v1/config"@service);
+        let installed = client.get("/v1/config").await;
         assert_eq!(installed.code, 200);
         assert_eq!(installed.message, "");
         assert_eq!(installed.data["title"], "new blog");
         assert_eq!(installed.data["description"], "an apple");
         assert_eq!(installed.data["password"], "");
+    }
+
+    #[tokio::test]
+    async fn test_login() {
+        let mut client = HttpClient::default().await;
+        let logged = client.get("/v1/login").await;
+        assert_eq!(logged.code, 403);
+
+        let resp = client
+            .post(
+                "/v1/login",
+                &json!({
+                    "password": ""
+                }),
+            )
+            .await;
+        assert_eq!(resp.code, 200);
+
+        let logged = client.get("/v1/login").await;
+        assert_eq!(logged.code, 200);
     }
 }

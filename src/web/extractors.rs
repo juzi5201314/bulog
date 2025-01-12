@@ -1,6 +1,10 @@
+use std::convert::identity;
+
 use salvo::{
+    Depot,
     extract::Metadata,
-    http::{header::CONTENT_TYPE, mime::APPLICATION_JSON},
+    http::mime::APPLICATION_JSON,
+    session::SessionDepotExt,
 };
 use serde::Deserialize;
 
@@ -38,4 +42,12 @@ where
             )),
         }
     }
+}
+
+pub fn logged(depot: &mut Depot) -> bool {
+    depot
+        .session()
+        .map(|session| session.get("logged"))
+        .and_then(identity)
+        .unwrap_or_default()
 }

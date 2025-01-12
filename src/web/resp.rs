@@ -1,4 +1,4 @@
-use salvo::http::{header::CONTENT_TYPE, mime};
+use salvo::http::{header::CONTENT_TYPE, mime::APPLICATION_JSON};
 use serde::Serialize;
 
 pub type RespResult<T> = Result<Response<T>, Response<()>>;
@@ -63,7 +63,7 @@ where
     T: Serialize,
 {
     fn render(self, res: &mut salvo::Response) {
-        res.add_header(CONTENT_TYPE, mime::JSON.as_str(), true)
+        res.add_header(CONTENT_TYPE, APPLICATION_JSON.essence_str(), true)
             .unwrap();
         match sonic_rs::to_vec(&self) {
             Ok(bytes) => res.write_body(bytes).unwrap(),
